@@ -1,0 +1,41 @@
+This is a WIP prototype of libuhwi - a C99 library for detecting PCI, USB
+devices as well as other hardware components.
+
+It supports the following OSes (at least this was the case at the time of
+writing):
+- FreeBSD (PCI via <sys/pciio.h>, USB via built-in libusb 1.0)
+- macOS (PCI WIP, USB via IOKit)
+
+Use the ancient version of GNU make to build on macOS, use the provided
+shell script to build on FreeBSD:
+
+   $ sh build_freebsd.sh clean
+   $ sh build_freebsd.sh
+
+Linking with the library requires you to link with the appropriate depen-
+dencies as well since libuhwi is built as a static library:
+
+   # On FreeBSD
+   $ clang ... -L. -luhwi -lusb
+
+   # on macOS
+   $ clang ... -L. -luhwi -framework CoreFoundation -framework IOKit
+
+UniHWI comes with lsuhwi - a command-line tool akin to lspci/usbconfig, but
+using libuhwi instead:
+
+   # dumps PCI and USB devices available on the system
+   $ ./lsuhwi
+
+   # dumps just the PCI devices
+   $ ./lsuhwi -l
+   # dumps just the USB devices
+   $ ./lsuhwi -u
+
+   # mediocre built-in usage documentation
+   $ ./lsuhwi -h
+
+Copyright (c) 2023 Universe-OS
+Copyright (c) 2023 Tim K. <timk@xfen.page>
+
+Licensed under MIT License
