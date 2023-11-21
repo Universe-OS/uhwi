@@ -32,6 +32,11 @@
 
 extern uhwi_errno_t uhwi_last_errno;
 
+#if __MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_12_0
+// macOS 12.0 renamed master port to main
+#define kIOMainPortDefault kIOMasterPortDefault
+#endif
+
 #define CFSTR_FROM_CSTR_ASCII(key) \
     CFStringCreateWithCString(kCFAllocatorDefault, key, \
                               kCFStringEncodingASCII)

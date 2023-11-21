@@ -4,7 +4,7 @@ devices as well as other hardware components.
 It supports the following OSes (at least this was the case at the time of
 writing):
 - FreeBSD (PCI via <sys/pciio.h>, USB via built-in libusb 1.0)
-- macOS (PCI WIP, USB via IOKit)
+- macOS (PCI and USB via IOKit)
 
 Use the ancient version of GNU make to build on macOS, use the provided
 shell script to build on FreeBSD:
