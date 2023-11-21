@@ -32,12 +32,16 @@
 #include <sys/types.h>
 #include <sys/ioctl.h>
 
+#include <sys/stat.h>
+
 #ifdef __FreeBSD__
 #include <sys/pciio.h>
 #include <libusb.h>
 
 #define UHWI_PCI_DEV_PATH_CONST "/dev/pci"
 #define UHWI_PCI_IORS_SZ_BASE 32
+
+#define UHWI_PCI_KNOWN_PATH_CONST "/usr/share/misc/pci_vendors"
 #endif
 
 #include "uhwi.h"

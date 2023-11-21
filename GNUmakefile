@@ -18,6 +18,10 @@ ifeq ($(shell uname),FreeBSD)
 LIBS := $(LIBS) -lusb
 endif
 
+ifdef DEBUG
+CFLAGS += -g
+endif
+
 all: lib bin
 
 lib: $(TARGET)

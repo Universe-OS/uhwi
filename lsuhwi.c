@@ -38,15 +38,18 @@ int main(const int argc, const char** argv) {
     while (first) {
         uhwi_dev* next = first->next;
 
-        fprintf(stdout, "[%s] vendor=0x%04x, device=0x%04x\n",
+        fprintf(stdout, "[%s] vendor=0x%04x, device=0x%04x",
                         (first->type == UHWI_DEV_USB) ? "USB" : "PCI",
                         first->vendor, first->device);
+
+        if (first->name[0] != '\0')
+            fprintf(stdout, ", name: %s", first->name);
+
+        fprintf(stdout, "%c", '\n');
         free(first);
 
         first = next;
     }
-
-    return 0;
 
     return 0;
 }

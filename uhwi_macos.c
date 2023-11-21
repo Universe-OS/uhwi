@@ -30,6 +30,31 @@
 
 #include "uhwi.h"
 
+void uhwi_strncpy_macos_dev_name_cstr(const uhwi_dev_t type,
+                                      const io_service_t dvv,
+                                      char* buf, const size_t max) {
+    if (type == UHWI_DEV_NULL)
+        return; // makes sense
+
+    // detect what kind of key applies to the device we are working with (the
+    // key that contains a user-friendly C string rendition of the device's
+    // product string)
+    const char* key = (type == UHWI_DEV_USB) ? kUSBProductString : "IOName";
+
+    // try to obtain that key's value
+    CFStringRef nmp = CFStringCreateWithCString(kCFAllocatorDefault, key,
+                                                kCFStringEncodingASCII);
+    CFTypeRef raw = IORegistryEntryCreateCFProperty(dvv, nmp, kCFAllocatorDefault,
+                                                    0);
+
+    // copy the resulting value, if valid, to the provided C string buffer
+    if (raw && CFGetTypeID(raw) == CFStringGetTypeID())
+        CFStringGetCString(raw, buf, max, kCFStringEncodingUTF8);
+
+    // clean up
+    CFRelease(nmp);
+}
+
 uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp) {
     if (type == UHWI_DEV_NULL)
         return NULL; // must be a specific device type request
@@ -111,6 +136,9 @@ uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp) {
 
                 (*dvdp)->GetDeviceVendor(dvdp, &current->vendor);
                 (*dvdp)->GetDeviceProduct(dvdp, &current->device);
+
+                uhwi_strncpy_macos_dev_name_cstr(type, dvv, current->name,
+                                                 UHWI_DEV_NAME_MAX_LEN);
             }
 
             // clean up the device object reference port thing
