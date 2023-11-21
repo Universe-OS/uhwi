@@ -46,6 +46,8 @@
 
 #include "uhwi.h"
 
+uhwi_errno_t uhwi_last_errno = UHWI_ERRNO_OK;
+
 #ifdef __APPLE__
 // use an IOKit wrapper function since the f/w supports device filtering by
 // type natively (kinda)
@@ -56,12 +58,16 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
     uhwi_dev* first = NULL;
     uhwi_dev* last = NULL;
 
+    uhwi_last_errno = UHWI_ERRNO_OK;
+
 #ifdef __FreeBSD__
     // open the PCI global control device for read first
     int fd = open(UHWI_PCI_DEV_PATH_CONST, O_RDONLY, 0);
 
-    if (fd < 0)
+    if (fd < 0) {
+        uhwi_last_errno = UHWI_ERRNO_PCI_OPEN;
         return NULL;
+    }
 
     // iors -> I/O (ioctl) result
     size_t iors_sz = sizeof(struct pci_conf) * UHWI_PCI_IORS_SZ_BASE;
@@ -82,6 +88,7 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
             free(iors);
             close(fd);
 
+            uhwi_last_errno = UHWI_ERRNO_PCI_IOCTL;
             return NULL;
         }
 
@@ -129,12 +136,16 @@ uhwi_dev* uhwi_get_usb_devs(void) {
     uhwi_dev* first = NULL;
     uhwi_dev* last = NULL;
 
+    uhwi_last_errno = UHWI_ERRNO_OK;
+
 #ifdef __FreeBSD__
     // FreeBSD comes with its copy of libusb, which is convenient
     libusb_context* ctx = NULL;
 
-    if (libusb_init(&ctx) != 0)
-        return NULL; // failed then
+    if (libusb_init(&ctx) != 0) {
+        uhwi_last_errno = UHWI_ERRNO_USB_INIT;
+        return NULL;
+    }
 
     // try to obtain a list of USB devices plugged into the current system
     libusb_device** list = NULL;
@@ -143,6 +154,8 @@ uhwi_dev* uhwi_get_usb_devs(void) {
     if (lsz < 0) {
         // clean up and fail
         libusb_exit(ctx);
+
+        uhwi_last_errno = UHWI_ERRNO_USB_LIST;
         return NULL;
     }
 
@@ -212,4 +225,8 @@ void uhwi_clean_up(uhwi_dev* first) {
         free(first);
         first = next;
     }
+}
+
+uhwi_errno_t uhwi_get_errno(void) {
+    return uhwi_last_errno;
 }

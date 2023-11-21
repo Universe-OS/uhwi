@@ -30,7 +30,7 @@ int main(const int argc, const char** argv) {
 
     uhwi_dev* first = uhwi_get_devs(type);
 
-    if (!first) {
+    if (!first && uhwi_get_errno() != UHWI_ERRNO_OK) {
         fprintf(stderr, "failed to obtain UHWI device info (or no devices of this type are connected to the system)!!\n");
         return 1;
     }
