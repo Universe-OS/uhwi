@@ -132,6 +132,24 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
     return first;
 }
 
+#ifdef __FreeBSD__
+void uhwi_strncpy_libusb_dev_name(libusb_device* dvv, const uint8_t desc,
+                                  char* buf, const size_t max) {
+    // try to establish USB connection with the device
+    libusb_device_handle* dvdp = NULL;
+
+    if (libusb_open(dvv, &dvdp) != 0)
+        return;
+
+    // this will fill out the specified C string buffer with the obtained
+    // product name ASCII string on success
+    libusb_get_string_descriptor_ascii(dvdp, desc, (uint8_t*)buf, max);
+
+    // clean up
+    libusb_close(dvdp);
+}
+#endif
+
 uhwi_dev* uhwi_get_usb_devs(void) {
     uhwi_dev* first = NULL;
     uhwi_dev* last = NULL;
@@ -173,8 +191,12 @@ uhwi_dev* uhwi_get_usb_devs(void) {
         memset(current, 0, sizeof(uhwi_dev));
 
         current->type = UHWI_DEV_USB;
+
         current->vendor = desc.idVendor;
         current->device = desc.idProduct;
+
+        uhwi_strncpy_libusb_dev_name(list[index], desc.iProduct,
+                                     current->name, UHWI_DEV_NAME_MAX_LEN);
 
         // add it to the linked list of USB devices
         if (last)
