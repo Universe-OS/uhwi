@@ -2,7 +2,7 @@
 // Copyright (C) 2023 Universe-OS
 // Copyright (C) 2023 Tim K. <timk@xfen.page>
 //
-// * Permission is hereby granted, free of charge, to any person obtaining a copy
+// Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
@@ -84,19 +84,24 @@ uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp) {
                 IOCFPlugInInterface** ifdp = NULL;
                 IOUSBDeviceInterface** dvdp = NULL;
 
+                // this is literally something we will never use in the code,
+                // but this has to be here since we can't just pass NULL as
+                // the final argument to IOCreatePlugInInterfaceForService
+                // as it would crash in that case
+                SInt32 state = 0;
+
                 err = IOCreatePlugInInterfaceForService(dvv, kIOUSBDeviceUserClientTypeID,
                                                         kIOCFPlugInInterfaceID,
-                                                        &ifdp, NULL);
+                                                        &ifdp, &state);
 
                 if (err != kIOReturnSuccess || !ifdp)
                     continue;
 
                 HRESULT rsl = (*ifdp)->QueryInterface(ifdp,
-                                                      CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID),
+                                                      CFUUIDGetUUIDBytes(kIOUSBDeviceInterfaceID650),
                                                       (LPVOID*)&dvdp);
-                (*ifdp)->Release(ifdp);
 
-                if (!rsl || !dvdp)
+                if (rsl != 0 || !dvdp)
                     continue;
 
                 // finally, obtain device vendor and product ID after the dark
