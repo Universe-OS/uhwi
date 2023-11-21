@@ -32,6 +32,10 @@
 
 extern uhwi_errno_t uhwi_last_errno;
 
+#define CFSTR_FROM_CSTR_ASCII(key) \
+    CFStringCreateWithCString(kCFAllocatorDefault, key, \
+                              kCFStringEncodingASCII)
+
 void uhwi_strncpy_macos_dev_name_cstr(const uhwi_dev_t type,
                                       const io_service_t dvv,
                                       char* buf, const size_t max) {
@@ -44,8 +48,7 @@ void uhwi_strncpy_macos_dev_name_cstr(const uhwi_dev_t type,
     const char* key = (type == UHWI_DEV_USB) ? kUSBProductString : "IOName";
 
     // try to obtain that key's value
-    CFStringRef nmp = CFStringCreateWithCString(kCFAllocatorDefault, key,
-                                                kCFStringEncodingASCII);
+    CFStringRef nmp = CFSTR_FROM_CSTR_ASCII(key);
     CFTypeRef raw = IORegistryEntryCreateCFProperty(dvv, nmp, kCFAllocatorDefault,
                                                     0);
 
@@ -55,6 +58,26 @@ void uhwi_strncpy_macos_dev_name_cstr(const uhwi_dev_t type,
 
     // clean up
     CFRelease(nmp);
+}
+
+uhwi_id_t uhwi_get_macos_pci_param(const io_service_t pci,
+                                   const char* key,
+                                   const uhwi_id_t dfv) {
+    SInt16 result = (SInt16)dfv;
+
+    CFStringRef kcf = CFSTR_FROM_CSTR_ASCII(key);
+    CFTypeRef raw = IORegistryEntryCreateCFProperty(pci, kcf, kCFAllocatorDefault,
+                                                    0);
+
+    if (raw) {
+        if (CFGetTypeID(raw) == CFNumberGetTypeID())
+            CFNumberGetValue(raw, kCFNumberSInt16Type, &result);
+        else if (CFGetTypeID(raw) == CFDataGetTypeID())
+            result = (SInt16)(*((long*)(CFDataGetBytePtr(raw))));
+    }
+
+    CFRelease(kcf);
+    return (uhwi_id_t)result;
 }
 
 uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp) {
@@ -144,17 +167,25 @@ uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp) {
 
                 (*dvdp)->GetDeviceVendor(dvdp, &current->vendor);
                 (*dvdp)->GetDeviceProduct(dvdp, &current->device);
+            } else if (type == UHWI_DEV_PCI) {
+                current = malloc(sizeof(uhwi_dev));
+                memset(current, 0, sizeof(uhwi_dev));
 
-                uhwi_strncpy_macos_dev_name_cstr(type, dvv, current->name,
-                                                 UHWI_DEV_NAME_MAX_LEN);
+                // at least with PCI it's more or less straightforward
+                current->vendor = uhwi_get_macos_pci_param(dvv, "vendor-id", 0);
+                current->device = uhwi_get_macos_pci_param(dvv, "device-id", 0);
+
+                current->subvendor = uhwi_get_macos_pci_param(dvv, "subsystem-vendor-id", 0);
+                current->subdevice = uhwi_get_macos_pci_param(dvv, "subsystem-id", 0);
             }
-
-            // clean up the device object reference port thing
-            IOObjectRelease(dvv);
 
             // add our UHWI device structure to the linked list if it is valid
             if (current) {
                 current->type = type;
+
+                // try to obtain device name C string, if possible
+                uhwi_strncpy_macos_dev_name_cstr(type, dvv, current->name,
+                                                 UHWI_DEV_NAME_MAX_LEN);
 
                 if (last)
                     last->next = current;
@@ -163,6 +194,10 @@ uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp) {
 
                 last = current;
             }
+
+            // clean up the device object reference port thing
+            IOObjectRelease(dvv);
+
         } else
             break;
     }
