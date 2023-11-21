@@ -30,6 +30,8 @@
 
 #include "uhwi.h"
 
+extern uhwi_errno_t uhwi_last_errno;
+
 void uhwi_strncpy_macos_dev_name_cstr(const uhwi_dev_t type,
                                       const io_service_t dvv,
                                       char* buf, const size_t max) {
@@ -62,12 +64,16 @@ uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp) {
     uhwi_dev* first = NULL;
     uhwi_dev* last = NULL;
 
+    uhwi_last_errno = UHWI_ERRNO_OK;
+
     // make a class matcher dictionary thing
     const char* mcn = (type == UHWI_DEV_USB) ? "IOUSBDevice" : "IOPCIDevice";
     CFMutableDictionaryRef matcher = IOServiceMatching(mcn);
 
-    if (!matcher)
+    if (!matcher) {
+        uhwi_last_errno = UHWI_ERRNO_IOKIT_NO_MEM;
         return NULL;
+    }
 
     // obtain all IOKit IOService instances (these are basically device-representing
     // objects which are just typedef-ed mach_port_t-s)
@@ -79,6 +85,8 @@ uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp) {
     if (err != KERN_SUCCESS) {
         // clean up and fail
         CFRelease(matcher);
+
+        uhwi_last_errno = UHWI_ERRNO_IOKIT_SERVICE;
         return NULL;
     }
 

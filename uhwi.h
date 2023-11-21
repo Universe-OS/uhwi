@@ -2,7 +2,7 @@
 // Copyright (C) 2023 Universe-OS
 // Copyright (C) 2023 Tim K. <timk@xfen.page>
 //
-// * Permission is hereby granted, free of charge, to any person obtaining a copy
+// Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
@@ -63,3 +63,37 @@ uhwi_dev* uhwi_get_devs(const uhwi_dev_t type);
 
 /// frees the entire linked list of devices
 void uhwi_clean_up(uhwi_dev* first);
+
+typedef enum {
+    // successful operation
+    UHWI_ERRNO_OK = 0,
+
+    //
+    // IOKit on macOS
+    //
+
+    // out of memory
+    UHWI_ERRNO_IOKIT_NO_MEM,
+    // IOServiceGetMatchingServices() failure
+    UHWI_ERRNO_IOKIT_SERVICE,
+
+    //
+    // pci(4) on FreeBSD
+    //
+
+    // open("/dev/pci") failed
+    UHWI_ERRNO_PCI_OPEN,
+    // ioctl(PCIOCGETCONF) failed
+    UHWI_ERRNO_PCI_IOCTL,
+
+    //
+    // libusb 1.0 on FreeBSD
+    //
+
+    // libusb_init() failed
+    UHWI_ERRNO_USB_INIT,
+    // libusb_get_device_list() failed
+    UHWI_ERRNO_USB_LIST
+} uhwi_errno_t;
+
+uhwi_errno_t uhwi_get_errno(void);
