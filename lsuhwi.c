@@ -38,9 +38,16 @@ int main(const int argc, const char** argv) {
     while (first) {
         uhwi_dev* next = first->next;
 
-        fprintf(stdout, "[%s] vendor=0x%04x, device=0x%04x",
-                        (first->type == UHWI_DEV_USB) ? "USB" : "PCI",
-                        first->vendor, first->device);
+        if (type == UHWI_DEV_NULL)
+            fprintf(stdout, "[%s] ", (first->type == UHWI_DEV_USB) ? "USB" :
+                                                                     "PCI");
+
+        fprintf(stdout, "vendor=0x%04x, device=0x%04x", first->vendor,
+                                                        first->device);
+
+        if (first->type == UHWI_DEV_PCI)
+            fprintf(stdout, ", subvendor=0x%04x, subdevice=0x%04x",
+                            first->subvendor, first->subdevice);
 
         if (first->name[0] != '\0')
             fprintf(stdout, ", name: %s", first->name);

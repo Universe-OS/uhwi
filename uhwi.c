@@ -95,6 +95,9 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
             current->vendor = iors[index].pc_vendor;
             current->device = iors[index].pc_device;
 
+            current->subvendor = iors[index].pc_subvendor;
+            current->subdevice = iors[index].pc_subdevice;
+
             if (last)
                 last->next = current;
             else

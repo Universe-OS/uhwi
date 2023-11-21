@@ -46,6 +46,11 @@ typedef struct {
     /// device ID (16-bit unsigned integer)
     uhwi_id_t device;
 
+    // subvendor ID (16-bit unsigned integer, PCI-only)
+    uhwi_id_t subvendor;
+    // subdevice ID (16-bit unsigned integer, PCI-only)
+    uhwi_id_t subdevice;
+
     /// device user-friendly name C string
     char name[UHWI_DEV_NAME_MAX_LEN];
 
