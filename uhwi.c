@@ -196,7 +196,7 @@ uhwi_dev* uhwi_get_usb_devs(void) {
         current->device = desc.idProduct;
 
         uhwi_strncpy_libusb_dev_name(list[index], desc.iProduct,
-                                     current->name, UHWI_DEV_NAME_MAX_LEN);
+                                     current->name, UHWI_DEV_NAME_MAX_LEN - 1);
 
         // add it to the linked list of USB devices
         if (last)

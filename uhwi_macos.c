@@ -190,7 +190,7 @@ uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp) {
 
                 // try to obtain device name C string, if possible
                 uhwi_strncpy_macos_dev_name_cstr(type, dvv, current->name,
-                                                 UHWI_DEV_NAME_MAX_LEN);
+                                                 UHWI_DEV_NAME_MAX_LEN - 1);
 
                 if (last)
                     last->next = current;
