@@ -110,7 +110,7 @@ typedef enum {
     uhwi_id_t vcur = dfv; \
     uhwi_id_t dcur = dfd; \
     \
-    if (!current) { \
+    if (current) { \
         current->next = malloc(sizeof(uhwi_dev)); \
         current = current->next; \
     } else { \
@@ -405,6 +405,24 @@ uhwi_dev* uhwi_sysfs_cat_usb_dev(const char* label) {
 #undef COMBINE_PATH
 #endif
 
+#ifdef __FreeBSD__
+void uhwi_strncpy_libusb_dev_name(libusb_device* dvv, const uint8_t desc,
+                                  char* buf, const size_t max) {
+    // try to establish USB connection with the device
+    libusb_device_handle* dvdp = NULL;
+
+    if (libusb_open(dvv, &dvdp) != 0)
+        return;
+
+    // this will fill out the specified C string buffer with the obtained
+    // product name ASCII string on success
+    libusb_get_string_descriptor_ascii(dvdp, desc, (uint8_t*)buf, max);
+
+    // clean up
+    libusb_close(dvdp);
+}
+#endif
+
 #define ADD_TO_LINKED_LIST(first, last, current) { \
     if (current) { \
         if (last) \
@@ -543,24 +561,6 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
 
     return first;
 }
-
-#ifdef __FreeBSD__
-void uhwi_strncpy_libusb_dev_name(libusb_device* dvv, const uint8_t desc,
-                                  char* buf, const size_t max) {
-    // try to establish USB connection with the device
-    libusb_device_handle* dvdp = NULL;
-
-    if (libusb_open(dvv, &dvdp) != 0)
-        return;
-
-    // this will fill out the specified C string buffer with the obtained
-    // product name ASCII string on success
-    libusb_get_string_descriptor_ascii(dvdp, desc, (uint8_t*)buf, max);
-
-    // clean up
-    libusb_close(dvdp);
-}
-#endif
 
 uhwi_dev* uhwi_get_usb_devs(void) {
     uhwi_dev* first = NULL;
