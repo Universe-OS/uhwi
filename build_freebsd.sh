@@ -7,6 +7,8 @@ then
 	exit 0
 fi
 
+test -z "$ENABLE_PCI_DB" || CFLAGS="$CFLAGS -DUHWI_ENABLE_PCI_DB=1"
+
 set -ve
 
 for fn in uhwi.c lsuhwi.c
