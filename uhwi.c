@@ -128,7 +128,7 @@ typedef enum {
 }
 
 #define RESET_TOKEN(token, max, index) { \
-    memset(token, 0, sizeof(char) * max); \
+    memset(token, 0, max); \
     index = 0; \
 }
 
@@ -168,7 +168,7 @@ uhwi_dev* uhwi_db_init(void) {
 
     while (1) {
         char cc = '\0';
-        read(fd, &cc, sizeof(char));
+        read(fd, &cc, 1);
 
         if (cc == '\r' || cc == '\n' || cc == '\0') {
             // newline encountered
@@ -266,8 +266,8 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
 
 #ifdef __linux__
 #define COMBINE_PATH(base, label, fn) { \
-    memset(path, 0, sizeof(char) * PATH_MAX); \
-    snprintf(path, PATH_MAX, "%s/%s/%s", base, label, fn); \
+    memset(path, 0, PATH_MAX); \
+    snprintf(path, PATH_MAX - 1, "%s/%s/%s", base, label, fn); \
 }
 
 #define POPULATE_ID_FROM_PATH(result, path, prefixed, mandatory) { \
@@ -279,11 +279,10 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
             /* sysfs pseudo-file, which are probably in a format of a 4-digit */ \
             /* hexademical value prepended with a 0x */ \
             char pbuf[UHWI_PCI_PBSZ_CONST]; \
-            size_t pbsz = sizeof(char) * UHWI_PCI_PBSZ_CONST; \
             \
             /* read in pseudo-file contents into the buffer */ \
-            memset(pbuf, 0, pbsz); \
-            if (read(pfd, pbuf, pbsz) > 0) \
+            memset(pbuf, 0, UHWI_PCI_PBSZ_CONST); \
+            if (read(pfd, pbuf, UHWI_PCI_PBSZ_CONST) > 0) \
                 SSCANF_ID(pbuf, result, prefixed) \
             \
             /* clean up */ \
@@ -351,10 +350,9 @@ uhwi_dev* uhwi_cat_sysfs_pci_dev(const char* label, uhwi_dev* db) {
     \
     if (pfd) { \
         char pbuf[max]; \
-        size_t pbsz = sizeof(char) * max; \
+        memset(pbuf, 0, max); \
         \
-        memset(pbuf, 0, pbsz); \
-        ssize_t rdsz = read(pfd, pbuf, pbsz); \
+        ssize_t rdsz = read(pfd, pbuf, max); \
         \
         if (rdsz > 1) { \
             pbuf[rdsz - 1] = ' '; /* replace trailing newline to combine C strings */ \
