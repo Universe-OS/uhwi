@@ -39,7 +39,9 @@
 
 #ifdef __FreeBSD__
 #include <sys/pciio.h>
-#include <libusb.h>
+
+#include <libusb20.h>
+#include <libusb20_desc.h>
 
 #define UHWI_PCI_DEV_PATH_CONST "/dev/pci"
 #define UHWI_PCI_IORS_SZ_BASE 32
@@ -405,24 +407,6 @@ uhwi_dev* uhwi_sysfs_cat_usb_dev(const char* label) {
 #undef COMBINE_PATH
 #endif
 
-#ifdef __FreeBSD__
-void uhwi_strncpy_libusb_dev_name(libusb_device* dvv, const uint8_t desc,
-                                  char* buf, const size_t max) {
-    // try to establish USB connection with the device
-    libusb_device_handle* dvdp = NULL;
-
-    if (libusb_open(dvv, &dvdp) != 0)
-        return;
-
-    // this will fill out the specified C string buffer with the obtained
-    // product name ASCII string on success
-    libusb_get_string_descriptor_ascii(dvdp, desc, (uint8_t*)buf, max);
-
-    // clean up
-    libusb_close(dvdp);
-}
-#endif
-
 #define ADD_TO_LINKED_LIST(first, last, current) { \
     if (current) { \
         if (last) \
@@ -569,53 +553,57 @@ uhwi_dev* uhwi_get_usb_devs(void) {
     uhwi_last_errno = UHWI_ERRNO_OK;
 
 #ifdef __FreeBSD__
-    // FreeBSD comes with its copy of libusb, which is convenient
-    libusb_context* ctx = NULL;
+    //
+    // FreeBSD comes with its copy of libusb 1.0, which seems to be broken,
+    // however - libusb 2.0 seems to be a relatively unrelated FreeBSD-specific
+    // USB device API akin to macOS's IOKit
+    //
+    // Oh, yeah, and the docs for libusb 2.0 are very poorly written... like,
+    // you don't even get to see the contents of struct LIBUSB20_DEVICE_DESC_DECODED,
+    // not even in the header... this time, it seems, FreeBSD devs have taken
+    // the lead for unreadable API docs from Apple :P
+    //
+    // As for reference on how to use libusb 2.0, I checked these sources:
+    // - https://man.freebsd.org/cgi/man.cgi?query=libusb20&apropos=0&sektion=3&manpath=FreeBSD+13.2-RELEASE&arch=default&format=html
+    // - https://github.com/freebsd/wireless/blob/main/usr.sbin/usbconfig/usbconfig.c
+    //
+    struct libusb20_backend* bke = libusb20_be_alloc_default();
 
-    if (libusb_init(&ctx) != 0) {
+    if (!bke) {
         uhwi_last_errno = UHWI_ERRNO_USB_INIT;
         return NULL;
     }
 
-    // try to obtain a list of USB devices plugged into the current system
-    libusb_device** list = NULL;
-    ssize_t lsz = libusb_get_device_list(ctx, &list);
+    // try to go through a list of USB devices plugged into the current system
+    struct libusb20_device* dvp = NULL;
 
-    if (lsz < 0) {
-        // clean up and fail
-        libusb_exit(ctx);
+    while (1) {
+        dvp = libusb20_be_device_foreach(bke, dvp);
 
-        uhwi_last_errno = UHWI_ERRNO_USB_LIST;
-        return NULL;
-    }
+        if (!dvp)
+            break; // end of listing
 
-    for (size_t index = 0; index < (size_t)lsz; index++) {
-        // try to obtain USB device descriptor structure, which contains all
-        // the necessary information we need
-        libusb_device_descriptor desc;
-        memset(&desc, 0, sizeof(libusb_device_descriptor));
+        struct LIBUSB20_DEVICE_DESC_DECODED* desc = libusb20_dev_get_device_desc(dvp);
 
-        if (libusb_get_device_descriptor(list[index], &desc) != 0)
-            continue;
+        if (!desc)
+            continue; // skip devices the description of which is unavailable
 
-        // populate a UHWI device structure
+        // populate a new uhwi_dev* with the information from the description
+        // structure
         uhwi_dev* current = malloc(sizeof(uhwi_dev));
         memset(current, 0, sizeof(uhwi_dev));
 
         current->type = UHWI_DEV_USB;
 
-        current->vendor = desc.idVendor;
-        current->device = desc.idProduct;
+        current->vendor = desc->idVendor;
+        current->device = desc->idProduct;
 
-        uhwi_strncpy_libusb_dev_name(list[index], desc.iProduct,
-                                     current->name, UHWI_DEV_NAME_MAX_LEN - 1);
-
+        // don't forget to add the uhwi_dev* to the linked list
         ADD_TO_LINKED_LIST(first, last, current)
     }
 
     // clean up
-    libusb_free_device_list(list, 1);
-    libusb_exit(ctx);
+    libusb20_be_free(bke);
 #elif defined(__APPLE__)
     first = uhwi_get_macos_devs(UHWI_DEV_USB, &last);
 #elif defined(__linux__)
