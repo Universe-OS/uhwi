@@ -3,7 +3,7 @@ devices as well as other hardware components.
 
 It supports the following OSes (at least this was the case at the time of
 writing):
-- FreeBSD (PCI via <sys/pciio.h>, USB via built-in libusb 1.0)
+- FreeBSD (PCI via <sys/pciio.h>, USB via built-in libusb 2.0)
 - macOS (PCI and USB via IOKit)
 - Linux (PCI and USB via sysfs)
 
