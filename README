@@ -5,10 +5,10 @@ It supports the following OSes (at least this was the case at the time of
 writing):
 - FreeBSD (PCI via <sys/pciio.h>, USB via built-in libusb 1.0)
 - macOS (PCI and USB via IOKit)
-- Linux (PCI via sysfs, USB WIP)
+- Linux (PCI and USB via sysfs)
 
-Use the ancient version of GNU make to build on macOS, use the provided
-shell script to build on FreeBSD:
+Use GNU make to build on macOS or Linux, use the provided shell script to
+build on FreeBSD:
 
    $ sh build_freebsd.sh clean
    $ sh build_freebsd.sh
@@ -23,6 +23,9 @@ PCI IDs Project (bundled on every default installation of FreeBSD):
    # on macOS (for debugging purposes only as PCI device name strings
    # are provided by IOKit natively on Mac)
    $ make ENABLE_PCI_DB=1 CFLAGS="-DUHWI_PCI_DB_PATH_CONST=\"/valid/DB/path\""
+
+   # on Linux
+   $ make ENABLE_PCI_DB=1
 
 Linking with the library requires you to link with the appropriate depen-
 dencies as well since libuhwi is built as a static library:

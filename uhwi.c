@@ -49,6 +49,8 @@
 
 #define UHWI_PCI_DIR_PATH_CONST "/sys/bus/pci/devices"
 #define UHWI_PCI_PBSZ_CONST 7
+
+#define UHWI_USB_DIR_PATH_CONST "/sys/bus/usb/devices"
 #endif
 
 #include "uhwi.h"
@@ -60,6 +62,22 @@ uhwi_errno_t uhwi_last_errno = UHWI_ERRNO_OK;
 // type natively (kinda)
 uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp);
 #endif
+
+#define SSCANF_ID(from, into, prefixed) { \
+    const char* pfmt = "0x%04x"; \
+    \
+    if (!prefixed) /* afaik only Linux sysfs PCI IDs are prefixed with a 0x */ \
+        pfmt += 2; \
+    \
+    /* on most OSses scanf() and its counterparts try to write "%x"-ed values into uint32_t-s, */ \
+    /* which is problematic since uhwi_id_t is a 16-bit unsigned integer, hence we need a */ \
+    /* proxy 32-bit unsigned integer variable to perform a cast almost immediately after the */ \
+    /* sscanf() call */ \
+    uint32_t conv = 0; \
+    sscanf(from, pfmt, &conv); \
+    \
+    into = (uhwi_id_t)conv; \
+}
 
 #ifdef UHWI_ENABLE_PCI_DB
 
@@ -92,7 +110,7 @@ typedef enum {
     uhwi_id_t vcur = dfv; \
     uhwi_id_t dcur = dfd; \
     \
-    if (current) { \
+    if (!current) { \
         current->next = malloc(sizeof(uhwi_dev)); \
         current = current->next; \
     } else { \
@@ -112,24 +130,13 @@ typedef enum {
     index = 0; \
 }
 
-#define SSCANF_ID(from, into) { \
-    /* on most OSses scanf() and its counterparts try to write "%x"-ed values into uint32_t-s, */ \
-    /* which is problematic since uhwi_id_t is a 16-bit unsigned integer, hence we need a */ \
-    /* proxy 32-bit unsigned integer variable to perform a cast almost immediately after the */ \
-    /* sscanf() call */ \
-    uint32_t conv = 0; \
-    sscanf(from, "%04x", &conv); \
-    \
-    into = (uhwi_id_t)conv; \
-}
-
 #define SCAN_DB_ID_INTO_NEW_ENTRY(first, current, dfv, dfd, field) { \
     /* initialize a new uhwi_dev* representing a DB entry */ \
     INIT_DB_ENTRY(first, current, dfv, dfd) \
     \
     /* read in the currently stored C string form of ID into the provided field of the */ \
     /* DB entry */ \
-    SSCANF_ID(token, current->field) \
+    SSCANF_ID(token, current->field, 0) \
     \
     /* don't forget to reset the token */ \
     RESET_TOKEN(token, UHWI_DEV_NAME_MAX_LEN, index) \
@@ -252,18 +259,16 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
 #undef SCAN_DB_ID_INTO_NEW_ENTRY
 #undef INIT_DB_ENTRY
 
-#undef SSCANF_ID
 #undef RESET_TOKEN
 #endif
 
 #ifdef __linux__
-#define COMBINE_PATH(label, fn) { \
+#define COMBINE_PATH(base, label, fn) { \
     memset(path, 0, sizeof(char) * PATH_MAX); \
-    snprintf(path, PATH_MAX, "%s/%s/%s", UHWI_PCI_DIR_PATH_CONST, \
-                                         label, fn); \
+    snprintf(path, PATH_MAX, "%s/%s/%s", base, label, fn); \
 }
 
-#define POPULATE_ID_FROM_PATH(result, path, mandatory) { \
+#define POPULATE_ID_FROM_PATH(result, path, prefixed, mandatory) { \
     if (access(path, F_OK) == 0) { \
         int pfd = open(path, O_RDONLY, 0); \
         \
@@ -276,13 +281,8 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
             \
             /* read in pseudo-file contents into the buffer */ \
             memset(pbuf, 0, pbsz); \
-            if (read(pfd, pbuf, pbsz) > 0 && \
-                pbuf[0] == '0' && pbuf[1] == 'x') { \
-                uint32_t pbid = 0; \
-                sscanf(pbuf, "0x%04x", &pbid); \
-                \
-                result = (uhwi_id_t)pbid; \
-            } \
+            if (read(pfd, pbuf, pbsz) > 0) \
+                SSCANF_ID(pbuf, result, prefixed) \
             \
             /* clean up */ \
             close(pfd); \
@@ -291,9 +291,9 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
         return NULL; /* fail as is (keep in mind, NO CLEAN UP PERFORMED!!) */ \
 }
 
-#define POPULATE_ID_FROM_COMBINED_PATH(label, fn, result, mandatory) { \
-    COMBINE_PATH(label, fn) \
-    POPULATE_ID_FROM_PATH(result, path, 1) \
+#define POPULATE_ID_FROM_COMBINED_PATH(base, label, fn, result, prefixed, mandatory) { \
+    COMBINE_PATH(base, label, fn) \
+    POPULATE_ID_FROM_PATH(result, path, prefixed, mandatory) \
 }
 
 uhwi_dev* uhwi_cat_sysfs_pci_dev(const char* label, uhwi_dev* db) {
@@ -306,12 +306,20 @@ uhwi_dev* uhwi_cat_sysfs_pci_dev(const char* label, uhwi_dev* db) {
     uhwi_id_t subdevice = 0;
 
     // obtain utmost important values - PCI vendor and device IDs
-    POPULATE_ID_FROM_COMBINED_PATH(label, "vendor", vendor, 1)
-    POPULATE_ID_FROM_COMBINED_PATH(label, "device", device, 1)
+    POPULATE_ID_FROM_COMBINED_PATH(UHWI_PCI_DIR_PATH_CONST,
+                                   label, "vendor",
+                                   vendor, 1, 1)
+    POPULATE_ID_FROM_COMBINED_PATH(UHWI_PCI_DIR_PATH_CONST,
+                                   label, "device",
+                                   device, 1, 1)
 
     // then obtain the rest, if available (subvendor and subdevice IDs)
-    POPULATE_ID_FROM_COMBINED_PATH(label, "subsystem_vendor", subvendor, 0)
-    POPULATE_ID_FROM_COMBINED_PATH(label, "subsystem_device", subdevice, 0)
+    POPULATE_ID_FROM_COMBINED_PATH(UHWI_PCI_DIR_PATH_CONST,
+                                   label, "subsystem_vendor",
+                                   subvendor, 1, 0)
+    POPULATE_ID_FROM_COMBINED_PATH(UHWI_PCI_DIR_PATH_CONST,
+                                   label, "subsystem_device",
+                                   subdevice, 1, 0)
 
     // prepare the resulting uhwi_dev* populated with all the values we have
     // obtained so far
@@ -334,11 +342,79 @@ uhwi_dev* uhwi_cat_sysfs_pci_dev(const char* label, uhwi_dev* db) {
     return result;
 }
 
+#define READ_USB_DEVICE_CSTR_DIRECTLY_FROM_COMBINED_PATH(label, fn, into, max) { \
+    COMBINE_PATH(UHWI_USB_DIR_PATH_CONST, label, fn) \
+    \
+    int pfd = open(path, O_RDONLY, 0); \
+    \
+    if (pfd) { \
+        char pbuf[max]; \
+        size_t pbsz = sizeof(char) * max; \
+        \
+        memset(pbuf, 0, pbsz); \
+        ssize_t rdsz = read(pfd, pbuf, pbsz); \
+        \
+        if (rdsz > 1) { \
+            pbuf[rdsz - 1] = ' '; /* replace trailing newline to combine C strings */ \
+            strncat(into, pbuf, max - 1); \
+        } \
+        \
+        close(pfd); \
+    } \
+}
+
+uhwi_dev* uhwi_sysfs_cat_usb_dev(const char* label) {
+    char path[PATH_MAX];
+
+    uhwi_id_t vendor = 0;
+    uhwi_id_t device = 0;
+
+    // obtain USB vendor and product/device IDs (all are mandatory)
+    POPULATE_ID_FROM_COMBINED_PATH(UHWI_USB_DIR_PATH_CONST,
+                                   label, "idVendor",
+                                   vendor, 0, 1)
+    POPULATE_ID_FROM_COMBINED_PATH(UHWI_USB_DIR_PATH_CONST,
+                                   label, "idProduct",
+                                   device, 0, 1)
+
+    uhwi_dev* result = malloc(sizeof(uhwi_dev));
+    memset(result, 0, sizeof(uhwi_dev));
+
+    result->type = UHWI_DEV_USB;
+
+    result->vendor = vendor;
+    result->device = device;
+
+    // attempt to read in self-reported USB device manufacturer + product/model
+    // name
+    READ_USB_DEVICE_CSTR_DIRECTLY_FROM_COMBINED_PATH(label, "manufacturer",
+                                                     result->name,
+                                                     UHWI_DEV_NAME_MAX_LEN)
+    READ_USB_DEVICE_CSTR_DIRECTLY_FROM_COMBINED_PATH(label, "product",
+                                                     result->name,
+                                                     UHWI_DEV_NAME_MAX_LEN)
+
+    return result;
+}
+
+#undef READ_USB_DEVICE_CSTR_DIRECTLY_FROM_COMBINED_PATH
+
 #undef POPULATE_ID_FROM_COMBINED_PATH
 #undef POPULATE_ID_FROM_PATH
 
 #undef COMBINE_PATH
 #endif
+
+#define ADD_TO_LINKED_LIST(first, last, current) { \
+    if (current) { \
+        if (last) \
+            last->next = current; \
+        else \
+            first = current; \
+        \
+        last = current; \
+    } \
+}
 
 uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
     uhwi_dev* first = NULL;
@@ -409,12 +485,7 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
             uhwi_strncpy_pci_db_dev_name(current, db);
 # endif
 
-            if (last)
-                last->next = current;
-            else
-                first = current;
-
-            last = current;
+            ADD_TO_LINKED_LIST(first, last, current)
             index++;
         }
 
@@ -446,6 +517,8 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
 
         if (!entry)
             break; // end of directory listing
+        else if (entry->d_name[0] == '.')
+            continue; // skip all hidden or parent reference entries
 
         // prepare uhwi_dev* from the specified PCI device-representing
         // pseudo-directory
@@ -454,13 +527,7 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
         if (!current)
             continue;
 
-        // add it to the linked list
-        if (last) {
-            last->next = current;
-        } else
-            first = current;
-
-        last = current;
+        ADD_TO_LINKED_LIST(first, last, current)
     }
 
     // clean up
@@ -543,13 +610,7 @@ uhwi_dev* uhwi_get_usb_devs(void) {
         uhwi_strncpy_libusb_dev_name(list[index], desc.iProduct,
                                      current->name, UHWI_DEV_NAME_MAX_LEN - 1);
 
-        // add it to the linked list of USB devices
-        if (last)
-            last->next = current;
-        else
-            first = last;
-
-        last = current;
+        ADD_TO_LINKED_LIST(first, last, current)
     }
 
     // clean up
@@ -557,6 +618,37 @@ uhwi_dev* uhwi_get_usb_devs(void) {
     libusb_exit(ctx);
 #elif defined(__APPLE__)
     first = uhwi_get_macos_devs(UHWI_DEV_USB, &last);
+#elif defined(__linux__)
+    DIR* drd = opendir(UHWI_USB_DIR_PATH_CONST);
+
+    if (!drd) {
+        uhwi_last_errno = UHWI_ERRNO_SYSFS_OPEN;
+        return NULL;
+    }
+
+    struct dirent* entry = NULL;
+
+    while (1) {
+        entry = readdir(drd);
+
+        if (!entry)
+            break; // end of directory listing
+        else if (entry->d_name[0] == '.')
+            continue; // skip hidden and parent reference entries
+
+        // try to process sysfs representation of the USB device into a
+        // uhwi_dev*
+        uhwi_dev* current = uhwi_sysfs_cat_usb_dev(entry->d_name);
+
+        // skip this USB device in case of failure
+        if (!current)
+            continue;
+
+        ADD_TO_LINKED_LIST(first, last, current)
+    }
+
+    // clean up
+    closedir(drd);
 #endif
 
     return first;
