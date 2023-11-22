@@ -98,7 +98,14 @@ typedef enum {
     // libusb_init() failed
     UHWI_ERRNO_USB_INIT,
     // libusb_get_device_list() failed
-    UHWI_ERRNO_USB_LIST
+    UHWI_ERRNO_USB_LIST,
+
+    //
+    // sysfs on Linux
+    //
+
+    // opendir("/sys/bus/.../devices") failed
+    UHWI_ERRNO_SYSFS_OPEN
 } uhwi_errno_t;
 
 uhwi_errno_t uhwi_get_errno(void);

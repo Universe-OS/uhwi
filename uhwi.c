@@ -43,6 +43,12 @@
 
 #define UHWI_PCI_DEV_PATH_CONST "/dev/pci"
 #define UHWI_PCI_IORS_SZ_BASE 32
+#elif defined(__linux__)
+#include <linux/limits.h>
+#include <dirent.h>
+
+#define UHWI_PCI_DIR_PATH_CONST "/sys/bus/pci/devices"
+#define UHWI_PCI_PBSZ_CONST 7
 #endif
 
 #include "uhwi.h"
@@ -60,6 +66,8 @@ uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp);
 # ifndef UHWI_PCI_DB_PATH_CONST
 #  ifdef __FreeBSD__
 #   define UHWI_PCI_DB_PATH_CONST "/usr/share/misc/pci_vendors"
+#  elif defined(__linux__)
+#   define UHWI_PCI_DB_PATH_CONST "/usr/share/misc/pci.ids"
 #  else
 #   error "Please define UHWI_PCI_DB_PATH_CONST (path to PCI IDs DB) via your C compiler flags."
 #  endif
@@ -216,9 +224,6 @@ uhwi_dev* uhwi_db_init(void) {
 }
 
 void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
-    if (!db)
-        return;
-
     const char* vname = "Unknown";
     const char* dname = NULL;
 
@@ -238,10 +243,10 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
 
     // if any name is detected for the PCI device, use it, overriding
     // the one returned by the OS itself (if any)
-    strncpy(current->name, vname, UHWI_DEV_NAME_MAX_LEN);
+    strncpy(current->name, vname, UHWI_DEV_NAME_MAX_LEN - 1);
 
     if (dname)
-        strncat(current->name, dname, UHWI_DEV_NAME_MAX_LEN);
+        strncat(current->name, dname, UHWI_DEV_NAME_MAX_LEN - 1);
 }
 
 #undef SCAN_DB_ID_INTO_NEW_ENTRY
@@ -249,6 +254,90 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
 
 #undef SSCANF_ID
 #undef RESET_TOKEN
+#endif
+
+#ifdef __linux__
+#define COMBINE_PATH(label, fn) { \
+    memset(path, 0, sizeof(char) * PATH_MAX); \
+    snprintf(path, PATH_MAX, "%s/%s/%s", UHWI_PCI_DIR_PATH_CONST, \
+                                         label, fn); \
+}
+
+#define POPULATE_ID_FROM_PATH(result, path, mandatory) { \
+    if (access(path, F_OK) == 0) { \
+        int pfd = open(path, O_RDONLY, 0); \
+        \
+        if (pfd >= 0) { \
+            /* buffer that stores the prettified contents of the specified */ \
+            /* sysfs pseudo-file, which are probably in a format of a 4-digit */ \
+            /* hexademical value prepended with a 0x */ \
+            char pbuf[UHWI_PCI_PBSZ_CONST]; \
+            size_t pbsz = sizeof(char) * UHWI_PCI_PBSZ_CONST; \
+            \
+            /* read in pseudo-file contents into the buffer */ \
+            memset(pbuf, 0, pbsz); \
+            if (read(pfd, pbuf, pbsz) > 0 && \
+                pbuf[0] == '0' && pbuf[1] == 'x') { \
+                uint32_t pbid = 0; \
+                sscanf(pbuf, "0x%04x", &pbid); \
+                \
+                result = (uhwi_id_t)pbid; \
+            } \
+            \
+            /* clean up */ \
+            close(pfd); \
+        } \
+    } else if (mandatory) \
+        return NULL; /* fail as is (keep in mind, NO CLEAN UP PERFORMED!!) */ \
+}
+
+#define POPULATE_ID_FROM_COMBINED_PATH(label, fn, result, mandatory) { \
+    COMBINE_PATH(label, fn) \
+    POPULATE_ID_FROM_PATH(result, path, 1) \
+}
+
+uhwi_dev* uhwi_cat_sysfs_pci_dev(const char* label, uhwi_dev* db) {
+    char path[PATH_MAX];
+
+    uhwi_id_t vendor = 0;
+    uhwi_id_t device = 0;
+
+    uhwi_id_t subvendor = 0;
+    uhwi_id_t subdevice = 0;
+
+    // obtain utmost important values - PCI vendor and device IDs
+    POPULATE_ID_FROM_COMBINED_PATH(label, "vendor", vendor, 1)
+    POPULATE_ID_FROM_COMBINED_PATH(label, "device", device, 1)
+
+    // then obtain the rest, if available (subvendor and subdevice IDs)
+    POPULATE_ID_FROM_COMBINED_PATH(label, "subsystem_vendor", subvendor, 0)
+    POPULATE_ID_FROM_COMBINED_PATH(label, "subsystem_device", subdevice, 0)
+
+    // prepare the resulting uhwi_dev* populated with all the values we have
+    // obtained so far
+    uhwi_dev* result = malloc(sizeof(uhwi_dev));
+    memset(result, 0, sizeof(uhwi_dev));
+
+    result->type = UHWI_DEV_PCI;
+
+    result->vendor = vendor;
+    result->device = device;
+
+    result->subvendor = subvendor;
+    result->subdevice = subdevice;
+
+# ifdef UHWI_ENABLE_PCI_DB
+    // try to detect PCI device name C string, if possible
+    uhwi_strncpy_pci_db_dev_name(result, db);
+# endif
+
+    return result;
+}
+
+#undef POPULATE_ID_FROM_COMBINED_PATH
+#undef POPULATE_ID_FROM_PATH
+
+#undef COMBINE_PATH
 #endif
 
 uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
@@ -272,6 +361,8 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
 
     if (fd < 0) {
         uhwi_last_errno = UHWI_ERRNO_PCI_OPEN;
+
+        uhwi_clean_up(db);
         return NULL;
     }
 
@@ -291,6 +382,8 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
             cnf.status == PCI_GETCONF_LIST_CHANGED ||
             cnf.status == PCI_GETCONF_ERROR) {
             // clean up and fail
+            uhwi_clean_up(db);
+
             free(iors);
             close(fd);
 
@@ -334,6 +427,44 @@ uhwi_dev* uhwi_get_pci_devs(uhwi_dev** lpp) {
     close(fd);
 #elif defined(__APPLE__)
     first = uhwi_get_macos_devs(UHWI_DEV_PCI, &last);
+#elif defined(__linux__)
+    DIR* descd = opendir(UHWI_PCI_DIR_PATH_CONST);
+
+    if (!descd) {
+        // failed to access /sys/bus/pci/devices directory -> clean up & fail
+        uhwi_clean_up(db);
+
+        uhwi_last_errno = UHWI_ERRNO_SYSFS_OPEN;
+        return NULL;
+    }
+
+    // each PCI device is represented by a directory
+    struct dirent* entry = NULL;
+
+    while (1) {
+        entry = readdir(descd);
+
+        if (!entry)
+            break; // end of directory listing
+
+        // prepare uhwi_dev* from the specified PCI device-representing
+        // pseudo-directory
+        uhwi_dev* current = uhwi_cat_sysfs_pci_dev(entry->d_name, db);
+
+        if (!current)
+            continue;
+
+        // add it to the linked list
+        if (last) {
+            last->next = current;
+        } else
+            first = current;
+
+        last = current;
+    }
+
+    // clean up
+    closedir(descd);
 #endif
 
     // return pointer to the last detected PCI device, if requested
