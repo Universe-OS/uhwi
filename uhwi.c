@@ -56,8 +56,14 @@ uhwi_dev* uhwi_get_macos_devs(const uhwi_dev_t type, uhwi_dev** lpp);
 #endif
 
 #ifdef UHWI_ENABLE_PCI_DB
+
 # ifndef UHWI_PCI_DB_PATH_CONST
-# define UHWI_PCI_DB_PATH_CONST "/usr/share/misc/pci_vendors"
+#  ifdef __FreeBSD__
+#   define UHWI_PCI_DB_PATH_CONST "/usr/share/misc/pci_vendors"
+#  else
+#   error "Please define UHWI_PCI_DB_PATH_CONST (path to PCI IDs DB) via your C compiler flags."
+#  endif
+
 # endif
 
 typedef enum {
