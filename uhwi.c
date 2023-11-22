@@ -219,16 +219,17 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
     if (!db)
         return;
 
-    const char* name = NULL;
+    const char* vname = "Unknown";
+    const char* dname = NULL;
 
     while (db) {
         if (db->vendor == current->vendor) {
             if (db->device == current->device) {
                 // exact match (TODO: support subvendor/subdevice IDs)
-                name = db->name;
+                dname = db->name;
                 break;
             } else // only the vendor name C string is known for now
-                name = db->name;
+                vname = db->name;
         }
 
         // go through each PCI DB device entry
@@ -237,8 +238,10 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
 
     // if any name is detected for the PCI device, use it, overriding
     // the one returned by the OS itself (if any)
-    if (name)
-        strncpy(current->name, name, UHWI_DEV_NAME_MAX_LEN);
+    strncpy(current->name, vname, UHWI_DEV_NAME_MAX_LEN);
+
+    if (dname)
+        strncat(current->name, dname, UHWI_DEV_NAME_MAX_LEN);
 }
 
 #undef SCAN_DB_ID_INTO_NEW_ENTRY
