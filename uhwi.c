@@ -407,6 +407,31 @@ uhwi_dev* uhwi_sysfs_cat_usb_dev(const char* label) {
 #undef COMBINE_PATH
 #endif
 
+#ifdef __FreeBSD__
+void uhwi_strncat_libusb20_indexed_cstr(struct libusb20_device* dvp,
+                                        const uint8_t idx,
+                                        char* target,
+                                        const size_t max) {
+    // attempt to open USB device in control transfer-exclusive mode
+    if (libusb20_dev_open(dvp, 0) != 0)
+        return;
+
+    char buf[max];
+    memset(buf, 0, max);
+
+    // try to obtain ASCII C string on the specified USB index
+    if (libusb20_dev_req_string_simple_sync(dvp, idx, buf, max - 1) == 0) {
+        // on success, strncat() it with a trailing space (to make additional
+        // reads to the same C string buffer combineable)
+        strncat(target, buf, max - 1);
+        strncat(target, " ", max - 1);
+    }
+
+    // clean up
+    libusb20_dev_close(dvp);
+}
+#endif
+
 #define ADD_TO_LINKED_LIST(first, last, current) { \
     if (current) { \
         if (last) \
@@ -597,6 +622,20 @@ uhwi_dev* uhwi_get_usb_devs(void) {
 
         current->vendor = desc->idVendor;
         current->device = desc->idProduct;
+
+        if (current->vendor == 0 || current->device == 0) {
+            // skip invalid USB devices
+            free(current);
+            continue;
+        }
+
+        // try to obtain manufacturer and product name C strings
+        uhwi_strncat_libusb20_indexed_cstr(dvp, desc->iManufacturer,
+                                           current->name,
+                                           UHWI_DEV_NAME_MAX_LEN);
+        uhwi_strncat_libusb20_indexed_cstr(dvp, desc->iProduct,
+                                           current->name,
+                                           UHWI_DEV_NAME_MAX_LEN);
 
         // don't forget to add the uhwi_dev* to the linked list
         ADD_TO_LINKED_LIST(first, last, current)
