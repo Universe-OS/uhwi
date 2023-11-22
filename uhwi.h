@@ -69,6 +69,11 @@ typedef enum {
     UHWI_ERRNO_OK = 0,
 
     //
+    // FreeBSD PCI vendors DB indexing
+    //
+    UHWI_ERRNO_PCI_DB_NO_ACCESS,
+
+    //
     // IOKit on macOS
     //
 

@@ -1,6 +1,10 @@
 CC = clang
 CFLAGS := -Wall -Werror -std=c99 -I. $(CFLAGS)
 
+ifdef ENABLE_PCI_DB
+CFLAGS += -DUHWI_ENABLE_PCI_DB
+endif
+
 AR ?= ar
 
 TARGET = libuhwi.a
@@ -12,6 +16,11 @@ TARGETS_BIN = lsuhwi.o
 ifeq ($(shell uname),Darwin)
 TARGETS += uhwi_macos.o
 LIBS := $(LIBS) -framework IOKit -framework CoreFoundation
+
+ifdef ENABLE_PCI_DB
+CFLAGS += -DUHWI_PCI_DB_PATH_CONST=\"/private/tmp/usr/share/misc/pci_vendors\"
+endif
+
 endif
 
 ifeq ($(shell uname),FreeBSD)
