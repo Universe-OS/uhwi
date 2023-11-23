@@ -69,6 +69,11 @@ typedef enum {
     UHWI_ERRNO_OK = 0,
 
     //
+    // FreeBSD PCI vendors DB indexing
+    //
+    UHWI_ERRNO_PCI_DB_NO_ACCESS,
+
+    //
     // IOKit on macOS
     //
 
@@ -87,13 +92,18 @@ typedef enum {
     UHWI_ERRNO_PCI_IOCTL,
 
     //
-    // libusb 1.0 on FreeBSD
+    // proprietary semi-documented libusb 2.0 on FreeBSD
     //
 
-    // libusb_init() failed
+    // libusb_be_alloc_default() failed
     UHWI_ERRNO_USB_INIT,
-    // libusb_get_device_list() failed
-    UHWI_ERRNO_USB_LIST
+
+    //
+    // sysfs on Linux
+    //
+
+    // opendir("/sys/bus/.../devices") failed
+    UHWI_ERRNO_SYSFS_OPEN
 } uhwi_errno_t;
 
 uhwi_errno_t uhwi_get_errno(void);

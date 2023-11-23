@@ -3,19 +3,34 @@ devices as well as other hardware components.
 
 It supports the following OSes (at least this was the case at the time of
 writing):
-- FreeBSD (PCI via <sys/pciio.h>, USB via built-in libusb 1.0)
+- FreeBSD (PCI via <sys/pciio.h>, USB via built-in libusb 2.0)
 - macOS (PCI and USB via IOKit)
+- Linux (PCI and USB via sysfs)
 
-Use the ancient version of GNU make to build on macOS, use the provided
-shell script to build on FreeBSD:
+Use GNU make to build on macOS or Linux, use the provided shell script to
+build on FreeBSD:
 
    $ sh build_freebsd.sh clean
    $ sh build_freebsd.sh
 
+It is possible to compile an experimental version of libuhwi which is ca-
+pable of guessing PCI devices' names using a database file provided by
+PCI IDs Project (bundled on every default installation of FreeBSD):
+
+   # on FreeBSD
+   $ ENABLE_PCI_DB=1 sh build_freebsd.sh
+
+   # on macOS (for debugging purposes only as PCI device name strings
+   # are provided by IOKit natively on Mac)
+   $ make ENABLE_PCI_DB=1 CFLAGS="-DUHWI_PCI_DB_PATH_CONST=\"/valid/DB/path\""
+
+   # on Linux
+   $ make ENABLE_PCI_DB=1
+
 Linking with the library requires you to link with the appropriate depen-
 dencies as well since libuhwi is built as a static library:
 
-   # On FreeBSD
+   # on FreeBSD
    $ clang ... -L. -luhwi -lusb
 
    # on macOS
@@ -26,11 +41,21 @@ using libuhwi instead:
 
    # dumps PCI and USB devices available on the system
    $ ./lsuhwi
+   # dumps PCI and USB devices available on the system in JSON form
+   $ ./lsuhwi -J
 
    # dumps just the PCI devices
    $ ./lsuhwi -l
    # dumps just the USB devices
    $ ./lsuhwi -u
+
+   # dumps PCI devices in JSON form
+   $ ./lsuhwi -l -J
+   # dumps USB devices in JSON form
+   $ ./lsuhwi -u -J
+
+   # dumps PCI DB contents
+   $ ./lsuhwi -d
 
    # mediocre built-in usage documentation
    $ ./lsuhwi -h

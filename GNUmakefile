@@ -1,6 +1,10 @@
 CC = clang
 CFLAGS := -Wall -Werror -std=c99 -I. $(CFLAGS)
 
+ifdef ENABLE_PCI_DB
+CFLAGS += -DUHWI_ENABLE_PCI_DB=1
+endif
+
 AR ?= ar
 
 TARGET = libuhwi.a

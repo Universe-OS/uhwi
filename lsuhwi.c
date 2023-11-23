@@ -52,19 +52,33 @@ void format_as_json(uhwi_dev* current, FILE* where) {
         fputc(',', where);
 }
 
+#ifdef UHWI_ENABLE_PCI_DB
+uhwi_dev* uhwi_db_init(void);
+#else
+uhwi_dev* uhwi_db_init(void) {
+    return NULL;
+}
+#endif
+
 int main(const int argc, const char** argv) {
     uhwi_dev_t type = UHWI_DEV_NULL;
-    size_t as_json = 0;
 
-    if (argc >= 2) {
-        if (argv[1][0] == '-' && argv[1][1] != '\0') {
-            switch (argv[1][1]) {
+    size_t as_json = 0;
+    size_t dump_pci_db = 0;
+
+    for (size_t index = 1; index < (size_t)argc; index++) {
+        if (argv[index][0] == '-' && argv[index][1] != '\0') {
+            switch (argv[index][1]) {
                 case 'u': {
                     type = UHWI_DEV_USB;
                     break;
                 }
                 case 'l': {
                     type = UHWI_DEV_PCI;
+                    break;
+                }
+                case 'd': {
+                    dump_pci_db = 1;
                     break;
                 }
                 case 'J': {
@@ -77,7 +91,7 @@ int main(const int argc, const char** argv) {
         }
     }
 
-    uhwi_dev* first = uhwi_get_devs(type);
+    uhwi_dev* first = dump_pci_db ? uhwi_db_init() : uhwi_get_devs(type);
 
     if (!first && uhwi_get_errno() != UHWI_ERRNO_OK) {
         fprintf(stderr, "failed to obtain UHWI device info (or no devices of this type are connected to the system)!!\n");
@@ -94,8 +108,7 @@ int main(const int argc, const char** argv) {
             format_as_json(first, stdout);
         else {
             if (type == UHWI_DEV_NULL)
-                fprintf(stdout, "[%s] ", (first->type == UHWI_DEV_USB) ? "USB" :
-                                                                     "PCI");
+                fprintf(stdout, "[%s] ", UHWI_DEV_TYPE_TO_CSTR(first->type));
 
             fprintf(stdout, "vendor=0x%04x, device=0x%04x", first->vendor,
                                                         first->device);
