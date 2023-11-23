@@ -39,7 +39,9 @@
 
 #ifdef __FreeBSD__
 #include <sys/pciio.h>
-#include <libusb.h>
+
+#include <libusb20.h>
+#include <libusb20_desc.h>
 
 #define UHWI_PCI_DEV_PATH_CONST "/dev/pci"
 #define UHWI_PCI_IORS_SZ_BASE 32
@@ -126,7 +128,7 @@ typedef enum {
 }
 
 #define RESET_TOKEN(token, max, index) { \
-    memset(token, 0, sizeof(char) * max); \
+    memset(token, 0, max); \
     index = 0; \
 }
 
@@ -166,7 +168,7 @@ uhwi_dev* uhwi_db_init(void) {
 
     while (1) {
         char cc = '\0';
-        read(fd, &cc, sizeof(char));
+        read(fd, &cc, 1);
 
         if (cc == '\r' || cc == '\n' || cc == '\0') {
             // newline encountered
@@ -264,8 +266,8 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
 
 #ifdef __linux__
 #define COMBINE_PATH(base, label, fn) { \
-    memset(path, 0, sizeof(char) * PATH_MAX); \
-    snprintf(path, PATH_MAX, "%s/%s/%s", base, label, fn); \
+    memset(path, 0, PATH_MAX); \
+    snprintf(path, PATH_MAX - 1, "%s/%s/%s", base, label, fn); \
 }
 
 #define POPULATE_ID_FROM_PATH(result, path, prefixed, mandatory) { \
@@ -277,11 +279,10 @@ void uhwi_strncpy_pci_db_dev_name(uhwi_dev* current, uhwi_dev* db) {
             /* sysfs pseudo-file, which are probably in a format of a 4-digit */ \
             /* hexademical value prepended with a 0x */ \
             char pbuf[UHWI_PCI_PBSZ_CONST]; \
-            size_t pbsz = sizeof(char) * UHWI_PCI_PBSZ_CONST; \
             \
             /* read in pseudo-file contents into the buffer */ \
-            memset(pbuf, 0, pbsz); \
-            if (read(pfd, pbuf, pbsz) > 0) \
+            memset(pbuf, 0, UHWI_PCI_PBSZ_CONST); \
+            if (read(pfd, pbuf, UHWI_PCI_PBSZ_CONST) > 0) \
                 SSCANF_ID(pbuf, result, prefixed) \
             \
             /* clean up */ \
@@ -349,10 +350,9 @@ uhwi_dev* uhwi_cat_sysfs_pci_dev(const char* label, uhwi_dev* db) {
     \
     if (pfd) { \
         char pbuf[max]; \
-        size_t pbsz = sizeof(char) * max; \
+        memset(pbuf, 0, max); \
         \
-        memset(pbuf, 0, pbsz); \
-        ssize_t rdsz = read(pfd, pbuf, pbsz); \
+        ssize_t rdsz = read(pfd, pbuf, max); \
         \
         if (rdsz > 1) { \
             pbuf[rdsz - 1] = ' '; /* replace trailing newline to combine C strings */ \
@@ -406,20 +406,27 @@ uhwi_dev* uhwi_sysfs_cat_usb_dev(const char* label) {
 #endif
 
 #ifdef __FreeBSD__
-void uhwi_strncpy_libusb_dev_name(libusb_device* dvv, const uint8_t desc,
-                                  char* buf, const size_t max) {
-    // try to establish USB connection with the device
-    libusb_device_handle* dvdp = NULL;
-
-    if (libusb_open(dvv, &dvdp) != 0)
+void uhwi_strncat_libusb20_indexed_cstr(struct libusb20_device* dvp,
+                                        const uint8_t idx,
+                                        char* target,
+                                        const size_t max) {
+    // attempt to open USB device in control transfer-exclusive mode
+    if (libusb20_dev_open(dvp, 0) != 0)
         return;
 
-    // this will fill out the specified C string buffer with the obtained
-    // product name ASCII string on success
-    libusb_get_string_descriptor_ascii(dvdp, desc, (uint8_t*)buf, max);
+    char buf[max];
+    memset(buf, 0, max);
+
+    // try to obtain ASCII C string on the specified USB index
+    if (libusb20_dev_req_string_simple_sync(dvp, idx, buf, max - 1) == 0) {
+        // on success, strncat() it with a trailing space (to make additional
+        // reads to the same C string buffer combineable)
+        strncat(target, buf, max - 1);
+        strncat(target, " ", max - 1);
+    }
 
     // clean up
-    libusb_close(dvdp);
+    libusb20_dev_close(dvp);
 }
 #endif
 
@@ -569,53 +576,71 @@ uhwi_dev* uhwi_get_usb_devs(void) {
     uhwi_last_errno = UHWI_ERRNO_OK;
 
 #ifdef __FreeBSD__
-    // FreeBSD comes with its copy of libusb, which is convenient
-    libusb_context* ctx = NULL;
+    //
+    // FreeBSD comes with its copy of libusb 1.0, which seems to be broken,
+    // however - libusb 2.0 seems to be a relatively unrelated FreeBSD-specific
+    // USB device API akin to macOS's IOKit
+    //
+    // Oh, yeah, and the docs for libusb 2.0 are very poorly written... like,
+    // you don't even get to see the contents of struct LIBUSB20_DEVICE_DESC_DECODED,
+    // not even in the header... this time, it seems, FreeBSD devs have taken
+    // the lead for unreadable API docs from Apple :P
+    //
+    // As for reference on how to use libusb 2.0, I checked these sources:
+    // - https://man.freebsd.org/cgi/man.cgi?query=libusb20&apropos=0&sektion=3&manpath=FreeBSD+13.2-RELEASE&arch=default&format=html
+    // - https://github.com/freebsd/wireless/blob/main/usr.sbin/usbconfig/usbconfig.c
+    //
+    struct libusb20_backend* bke = libusb20_be_alloc_default();
 
-    if (libusb_init(&ctx) != 0) {
+    if (!bke) {
         uhwi_last_errno = UHWI_ERRNO_USB_INIT;
         return NULL;
     }
 
-    // try to obtain a list of USB devices plugged into the current system
-    libusb_device** list = NULL;
-    ssize_t lsz = libusb_get_device_list(ctx, &list);
+    // try to go through a list of USB devices plugged into the current system
+    struct libusb20_device* dvp = NULL;
 
-    if (lsz < 0) {
-        // clean up and fail
-        libusb_exit(ctx);
+    while (1) {
+        dvp = libusb20_be_device_foreach(bke, dvp);
 
-        uhwi_last_errno = UHWI_ERRNO_USB_LIST;
-        return NULL;
-    }
+        if (!dvp)
+            break; // end of listing
 
-    for (size_t index = 0; index < (size_t)lsz; index++) {
-        // try to obtain USB device descriptor structure, which contains all
-        // the necessary information we need
-        libusb_device_descriptor desc;
-        memset(&desc, 0, sizeof(libusb_device_descriptor));
+        struct LIBUSB20_DEVICE_DESC_DECODED* desc = libusb20_dev_get_device_desc(dvp);
 
-        if (libusb_get_device_descriptor(list[index], &desc) != 0)
-            continue;
+        if (!desc)
+            continue; // skip devices the description of which is unavailable
 
-        // populate a UHWI device structure
+        // populate a new uhwi_dev* with the information from the description
+        // structure
         uhwi_dev* current = malloc(sizeof(uhwi_dev));
         memset(current, 0, sizeof(uhwi_dev));
 
         current->type = UHWI_DEV_USB;
 
-        current->vendor = desc.idVendor;
-        current->device = desc.idProduct;
+        current->vendor = desc->idVendor;
+        current->device = desc->idProduct;
 
-        uhwi_strncpy_libusb_dev_name(list[index], desc.iProduct,
-                                     current->name, UHWI_DEV_NAME_MAX_LEN - 1);
+        if (current->vendor == 0 || current->device == 0) {
+            // skip invalid USB devices
+            free(current);
+            continue;
+        }
 
+        // try to obtain manufacturer and product name C strings
+        uhwi_strncat_libusb20_indexed_cstr(dvp, desc->iManufacturer,
+                                           current->name,
+                                           UHWI_DEV_NAME_MAX_LEN);
+        uhwi_strncat_libusb20_indexed_cstr(dvp, desc->iProduct,
+                                           current->name,
+                                           UHWI_DEV_NAME_MAX_LEN);
+
+        // don't forget to add the uhwi_dev* to the linked list
         ADD_TO_LINKED_LIST(first, last, current)
     }
 
     // clean up
-    libusb_free_device_list(list, 1);
-    libusb_exit(ctx);
+    libusb20_be_free(bke);
 #elif defined(__APPLE__)
     first = uhwi_get_macos_devs(UHWI_DEV_USB, &last);
 #elif defined(__linux__)
